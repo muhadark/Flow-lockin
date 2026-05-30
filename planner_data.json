@@ -1,0 +1,73 @@
+{
+  "state": {
+    "2026-05-24": {
+      "5_w1": true,
+      "5_h1": true,
+      "5_h3": false
+    }
+  },
+  "cats": [
+    {
+      "id": "g",
+      "name": "Grammatik",
+      "color": "green"
+    },
+    {
+      "id": "h",
+      "name": "Hören",
+      "color": "blue"
+    },
+    {
+      "id": "w",
+      "name": "Wortschatz",
+      "color": "amber"
+    },
+    {
+      "id": "s",
+      "name": "Sprechen",
+      "color": "pink"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "g1",
+      "cat": "g",
+      "label": "Grammatik Übungen (ChatGPT)"
+    },
+    {
+      "id": "h1",
+      "cat": "h",
+      "label": "Vlog YouTube"
+    },
+    {
+      "id": "h2",
+      "cat": "h",
+      "label": "Dokumentary ZDF/ARD"
+    },
+    {
+      "id": "h3",
+      "cat": "h",
+      "label": "Easy German Video"
+    },
+    {
+      "id": "w1",
+      "cat": "w",
+      "label": "Neue Wörter lernen"
+    },
+    {
+      "id": "s1",
+      "cat": "s",
+      "label": "Thema schreiben"
+    },
+    {
+      "id": "s2",
+      "cat": "s",
+      "label": "Thema sprechen"
+    }
+  ],
+  "studyGoals": {
+    "g": 20,
+    "h": 45,
+    "s": 15
+  }
+}
