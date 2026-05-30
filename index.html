@@ -165,6 +165,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--txt);min-height:1
   .stats-grid{grid-template-columns:1fr}
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 <div class="tracker">
@@ -246,12 +247,32 @@ body{font-family:var(--font);background:var(--bg3);color:var(--txt);min-height:1
 </div>
 
 <div class="modal-overlay" id="stats-modal-overlay" style="display:none" onclick="closeStatsModalOutside(event)">
-  <div class="modal" id="stats-modal-box" style="max-width:640px">
+  <div class="modal" id="stats-modal-box" style="max-width:700px; width:95%">
     <div class="modal-header">
       <span class="modal-title">📊 Statistics & Weaknesses</span>
       <button class="close-btn" onclick="closeStatsModal()" aria-label="Schließen"><i class="ti ti-x"></i></button>
     </div>
-    <div id="stats-body"><div class="stats-loading">Loading Statistics...</div></div>
+    <div id="stats-body" style="display:flex;flex-direction:column;gap:20px;max-height:80vh;overflow-y:auto;padding-right:5px">
+      <div id="stats-weaknesses-container"></div>
+      <div class="stats-grid" style="grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="stats-card">
+          <div class="stats-card-title">Completion Rate</div>
+          <canvas id="chart-completion"></canvas>
+        </div>
+        <div class="stats-card">
+          <div class="stats-card-title">Most Skipped</div>
+          <canvas id="chart-skipped"></canvas>
+        </div>
+        <div class="stats-card">
+          <div class="stats-card-title">Learning Time (Min)</div>
+          <canvas id="chart-time"></canvas>
+        </div>
+        <div class="stats-card">
+          <div class="stats-card-title">Summary</div>
+          <div id="stats-summary-text" style="font-size:13px; line-height:1.6; color:var(--txt); margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -376,27 +397,7 @@ function renderPiP(){
   pipWindow.document.getElementById('pip-btn').onclick=()=>stopTimer();
 }
 
-let useServer=false;
-
-async function loadData(){
-  // Try server first
-  try{
-    const res=await fetch('/api/data');
-    if(res.ok){
-      const d=await res.json();
-      if(d && Object.keys(d).length>0 && d.state){
-        state=d.state||{};
-        cats=d.cats||[...DEFAULT_CATS];
-        tasks=d.tasks||[...DEFAULT_TASKS];
-        studyGoals=d.studyGoals||{g:20,h:45,s:15};
-        useServer=true;
-        console.log('[Server] Data loaded from backend.');
-        return;
-      }
-    }
-  }catch(e){console.log('[Server] Backend not reachable, using localStorage.');}
-
-  // Fallback to localStorage
+function loadData(){
   try{state=JSON.parse(localStorage.getItem('dw_state')||'{}')}catch(e){state={}}
   try{
     const sc=localStorage.getItem('dw_cats');
@@ -410,37 +411,12 @@ async function loadData(){
     const sg=localStorage.getItem('dw_studyGoals');
     if(sg) studyGoals=JSON.parse(sg);
   }catch(e){}
-
-  // Migrate localStorage data to server
-  if(Object.keys(state).length>0){
-    try{
-      const res=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state,cats,tasks,studyGoals})});
-      if(res.ok){useServer=true;console.log('[Server] Migrated localStorage data to backend!');}
-    }catch(e){}
-  }
 }
 
-function _syncToServer(){
-  try{
-    fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state,cats,tasks,studyGoals})}).catch(()=>{});
-  }catch(e){}
-}
-function saveState(){
-  try{localStorage.setItem('dw_state',JSON.stringify(state))}catch(e){}
-  _syncToServer();
-}
-function saveCats(){
-  try{localStorage.setItem('dw_cats',JSON.stringify(cats))}catch(e){}
-  _syncToServer();
-}
-function saveTasks(){
-  try{localStorage.setItem('dw_tasks',JSON.stringify(tasks))}catch(e){}
-  _syncToServer();
-}
-function saveStudyGoals(){
-  try{localStorage.setItem('dw_studyGoals',JSON.stringify(studyGoals))}catch(e){}
-  _syncToServer();
-}
+function saveState(){try{localStorage.setItem('dw_state',JSON.stringify(state))}catch(e){}}
+function saveCats(){try{localStorage.setItem('dw_cats',JSON.stringify(cats))}catch(e){}}
+function saveTasks(){try{localStorage.setItem('dw_tasks',JSON.stringify(tasks))}catch(e){}}
+function saveStudyGoals(){try{localStorage.setItem('dw_studyGoals',JSON.stringify(studyGoals))}catch(e){}}
 
 function getMonday(offset){
   const now=new Date();
@@ -958,37 +934,162 @@ function addTask(){
   saveTasks();renderModal();render();
 }
 
+let statsCharts = [];
+
 function openStatsModal(){
   document.getElementById('stats-modal-overlay').style.display='flex';
-  document.getElementById('stats-body').innerHTML='<div class="stats-loading">Loading Statistics...</div>';
-  fetch('/api/stats').then(r=>r.json()).then(data=>{
-    if(data.error){
-      document.getElementById('stats-body').innerHTML=`<div class="stats-loading">${esc(data.error)}</div>`;
-      return;
-    }
-    let html='';
-    // Weakness alerts
-    if(data.weaknesses && data.weaknesses.length>0){
-      data.weaknesses.forEach(w=>{
-        html+=`<div class="stats-weakness"><div class="stats-weakness-title"><i class="ti ti-alert-triangle"></i> Weakness Detected</div><div class="stats-weakness-text">${w}</div></div>`;
+  
+  statsCharts.forEach(c => c.destroy());
+  statsCharts = [];
+
+  const catMap = {};
+  const catColors = {};
+  cats.forEach(c => { catMap[c.id]=c.name; catColors[c.id]=c.color; });
+
+  const COLOR_MAP = {
+    'green': '#1D9E75', 'blue': '#185FA5', 'amber': '#D4890B',
+    'pink': '#C04670', 'teal': '#0E8064', 'purple': '#534AB7',
+    'red': '#E24B4A', 'coral': '#D85A30'
+  };
+
+  const catTotals = {};
+  const catDones = {};
+  const taskTotals = {};
+  const taskDones = {};
+  const catTime = {};
+  let totalWords = 0;
+
+  cats.forEach(c => { catTotals[c.id]=0; catDones[c.id]=0; catTime[c.id]=0; });
+  tasks.forEach(t => { taskTotals[t.id]=0; taskDones[t.id]=0; });
+
+  const weeks = Object.keys(state);
+  weeks.forEach(wk => {
+    const weekData = state[wk];
+    Object.keys(weekData).forEach(k => {
+      if(k.endsWith('_words') && Array.isArray(weekData[k])) {
+        totalWords += weekData[k].length;
+      }
+      if(k.includes('_time_')) {
+        const cid = k.split('_time_')[1];
+        if(catTime[cid] !== undefined) catTime[cid] += weekData[k];
+      }
+    });
+
+    for(let i=0; i<7; i++) {
+      tasks.forEach(t => {
+        if(catTotals[t.cat] !== undefined) catTotals[t.cat]++;
+        if(taskTotals[t.id] !== undefined) taskTotals[t.id]++;
+        if(weekData[`${i}_${t.id}`]) {
+          if(catDones[t.cat] !== undefined) catDones[t.cat]++;
+          if(taskDones[t.id] !== undefined) taskDones[t.id]++;
+        }
       });
     }
-    // Chart
-    if(data.chart_base64){
-      html+=`<div class="stats-chart"><img src="data:image/png;base64,${data.chart_base64}" alt="Statistics" /></div>`;
-    }
-    document.getElementById('stats-body').innerHTML=html||'<div class="stats-loading">No data available.</div>';
-  }).catch(e=>{
-    document.getElementById('stats-body').innerHTML='<div class="stats-loading">Error: Server unreachable. Please make sure python app.py is running.</div>';
   });
+
+  const compRates = cats.map(c => {
+    const total = catTotals[c.id];
+    return {
+      cat: c.name,
+      rate: total > 0 ? (catDones[c.id]/total*100) : 0,
+      color: COLOR_MAP[c.color] || COLOR_MAP['green']
+    };
+  });
+
+  const taskRates = tasks.map(t => {
+    const total = taskTotals[t.id];
+    return {
+      task: t.label,
+      rate: total > 0 ? (taskDones[t.id]/total*100) : 0,
+      color: COLOR_MAP[catColors[t.cat]] || COLOR_MAP['green']
+    };
+  }).sort((a,b) => a.rate - b.rate);
+
+  const timeStats = cats.map(c => ({
+    cat: c.name,
+    mins: catTime[c.id] / 60,
+    color: COLOR_MAP[c.color] || COLOR_MAP['green']
+  })).filter(c => c.mins > 0);
+
+  Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
+  Chart.defaults.color = '#8A8C93';
+  const chartOpts = { indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{max:100, ticks:{callback:v=>v+'%'}}} };
+
+  const ctxComp = document.getElementById('chart-completion').getContext('2d');
+  statsCharts.push(new Chart(ctxComp, {
+    type: 'bar',
+    data: {
+      labels: compRates.map(c=>c.cat.length>15?c.cat.substring(0,15)+'...':c.cat),
+      datasets: [{ data: compRates.map(c=>c.rate), backgroundColor: compRates.map(c=>c.color), borderRadius: 4 }]
+    },
+    options: chartOpts
+  }));
+
+  const top5Skipped = taskRates.slice(0,5);
+  const ctxSkip = document.getElementById('chart-skipped').getContext('2d');
+  statsCharts.push(new Chart(ctxSkip, {
+    type: 'bar',
+    data: {
+      labels: top5Skipped.map(t=>t.task.length>20?t.task.substring(0,20)+'...':t.task),
+      datasets: [{ data: top5Skipped.map(t=>t.rate), backgroundColor: top5Skipped.map(t=>t.color), borderRadius: 4 }]
+    },
+    options: chartOpts
+  }));
+
+  const ctxTime = document.getElementById('chart-time').getContext('2d');
+  statsCharts.push(new Chart(ctxTime, {
+    type: 'bar',
+    data: {
+      labels: timeStats.map(c=>c.cat.length>15?c.cat.substring(0,15)+'...':c.cat),
+      datasets: [{ data: timeStats.map(c=>c.mins), backgroundColor: timeStats.map(c=>c.color), borderRadius: 4 }]
+    },
+    options: { indexAxis:'y', plugins:{legend:{display:false}} }
+  }));
+
+  let totalDones=0, totalAll=0;
+  Object.values(taskDones).forEach(v=>totalDones+=v);
+  Object.values(taskTotals).forEach(v=>totalAll+=v);
+  const totalMins = Object.values(catTime).reduce((a,b)=>a+b,0)/60;
+  
+  document.getElementById('stats-summary-text').innerHTML = `
+    📅 Weeks Tracked: <b>${weeks.length}</b><br><br>
+    ✅ Tasks Completed: <b>${totalDones} / ${totalAll}</b> (${totalAll>0?Math.round(totalDones/totalAll*100):0}%)<br><br>
+    ⏱️ Total Learning Time: <b>${Math.round(totalMins)} Min</b><br><br>
+    📖 Words Learned: <b>${totalWords}</b>
+  `;
+
+  const weaknesses = [];
+  const worstCat = compRates.sort((a,b)=>a.rate-b.rate)[0];
+  if(worstCat && worstCat.rate < 50 && totalAll > 0) {
+    weaknesses.push(`Your biggest weakness is <b>${worstCat.cat}</b> — only <b>${Math.round(worstCat.rate)}%</b> completion rate. Try to complete more tasks here!`);
+  }
+  if(top5Skipped[0] && top5Skipped[0].rate < 30 && taskTotals[tasks.find(t=>t.label===top5Skipped[0].task).id]>0) {
+    weaknesses.push(`The task <b>${top5Skipped[0].task}</b> is skipped most often (<b>${Math.round(top5Skipped[0].rate)}%</b>). Make it a priority!`);
+  }
+  
+  Object.keys(studyGoals).forEach(cid => {
+    const goal = studyGoals[cid];
+    if(goal > 0) {
+      const actual = catTime[cid] ? catTime[cid]/60 : 0;
+      const expected = goal * 7 * weeks.length;
+      if(expected > 0 && actual < expected * 0.5) {
+        weaknesses.push(`You are not reaching your time goal for <b>${catMap[cid]||cid}</b> — <b>${Math.round(actual)}m</b> out of <b>${Math.round(expected)}m</b> goal. Try to schedule more time!`);
+      }
+    }
+  });
+
+  if(weaknesses.length === 0) weaknesses.push("No weaknesses detected — you are doing great! 🎉 Keep it up!");
+
+  document.getElementById('stats-weaknesses-container').innerHTML = weaknesses.map(w => 
+    `<div class="stats-weakness"><div class="stats-weakness-title"><i class="ti ti-alert-triangle"></i> Weakness Detected</div><div class="stats-weakness-text">${w}</div></div>`
+  ).join('');
 }
+
 function closeStatsModal(){document.getElementById('stats-modal-overlay').style.display='none'}
 function closeStatsModalOutside(e){if(e.target===document.getElementById('stats-modal-overlay'))closeStatsModal()}
 
-(async ()=>{
-  await loadData();
-  render();
-})();
+loadData();
+render();
 </script>
 </body>
 </html>
