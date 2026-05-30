@@ -112,6 +112,18 @@ body{font-family:var(--font);background:var(--bg3);color:var(--txt);min-height:1
 .modal-tab:hover{background:var(--bg2)}
 .modal-tab.active{background:var(--green-l);color:var(--green-d)}
 
+.word-btn{background:none;border:none;color:var(--txt3);cursor:pointer;padding:2px;display:flex;align-items:center;border-radius:4px;transition:all .15s}
+.word-btn:hover{color:var(--amber);background:var(--amber-l)}
+.word-badge{font-size:9px;background:var(--amber-l);color:var(--amber);padding:1px 4px;border-radius:4px;font-weight:600;margin-left:4px}
+.word-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;margin-bottom:15px;max-height:300px;overflow-y:auto;padding-right:5px}
+.word-item{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.word-content{flex:1}
+.word-main{font-weight:600;font-size:14px;color:var(--txt);margin-bottom:3px}
+.word-sentence{font-size:12px;color:var(--txt2);font-style:italic}
+.word-inputs{display:flex;flex-direction:column;gap:8px;background:var(--bg2);padding:12px;border-radius:var(--r)}
+.word-inputs input{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:8px 10px;font-size:13px;color:var(--txt);font-family:var(--font);width:100%}
+.word-inputs input:focus{outline:none;border-color:var(--amber)}
+
 .study-tracker{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:6px}
 .st-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);padding:6px 8px;border-radius:6px}
 .st-lbl{font-size:11px;font-weight:600;color:var(--txt)}
@@ -145,9 +157,10 @@ body{font-family:var(--font);background:var(--bg3);color:var(--txt);min-height:1
           <path d="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z"/>
         </svg>
       </div>
-      Deutsch Wochenplaner
+      LOCKEDIN Wochenplaner
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="manage-btn" onclick="openGlobalWordsModal()"><i class="ti ti-book" aria-hidden="true"></i> Wörterbuch</button>
       <button class="manage-btn" onclick="openManager()"><i class="ti ti-settings" aria-hidden="true"></i> Verwalten</button>
       <div class="week-nav">
         <button onclick="changeWeek(-1)">&#8249;</button>
@@ -207,6 +220,33 @@ body{font-family:var(--font);background:var(--bg3);color:var(--txt);min-height:1
       <button class="close-btn" onclick="closeManager()" aria-label="Schließen"><i class="ti ti-x"></i></button>
     </div>
     <div id="modal-body"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="words-modal-overlay" style="display:none" onclick="closeWordsModalOutside(event)">
+  <div class="modal" id="words-modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="words-modal-title">Wörter</span>
+      <button class="close-btn" onclick="closeWordsModal()" aria-label="Schließen"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="word-list" id="words-list"></div>
+    <div class="word-inputs">
+      <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:2px">Neues Wort hinzufügen</div>
+      <input id="new-word-input" placeholder="Wort (z.B. das Haus)" onblur="autoTranslateWord()" />
+      <input id="new-arabic-input" placeholder="Bedeutung (Arabisch)" />
+      <input id="new-sentence-input" placeholder="Beispielsatz (optional)" onkeypress="if(event.key==='Enter')addWord()" />
+      <button class="add-btn" style="background:var(--amber);align-self:flex-start" onclick="addWord()">+ Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="global-words-modal-overlay" style="display:none" onclick="closeGlobalWordsModalOutside(event)">
+  <div class="modal" id="global-words-modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Mein Wörterbuch</span>
+      <button class="close-btn" onclick="closeGlobalWordsModal()" aria-label="Schließen"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="word-list" id="global-words-list" style="max-height:60vh"></div>
   </div>
 </div>
 
@@ -558,8 +598,15 @@ function render(){
       const done=!!wData[di+'_'+t.id];
       const item=document.createElement('div');
       item.className='task-item';
+      let wordsBtnHtml='';
+      if(t.cat==='w'){
+        const wordKey=di+'_'+t.id+'_words';
+        const wordsArr=wData[wordKey]||[];
+        const badge=wordsArr.length>0?`<span class="word-badge">${wordsArr.length}</span>`:'';
+        wordsBtnHtml=`<button class="word-btn" onclick="event.stopPropagation();openWordsModal('${wk}',${di},'${t.id}','${esc(t.label)}')"><i class="ti ti-book" style="font-size:14px"></i>${badge}</button>`;
+      }
       const cs=done?`style="${colStyle(cat.color,'check')}"`:''
-      item.innerHTML=`<div class="task-check ${done?'done':''}" ${cs}></div><div><div class="task-label ${done?'done':''}">${t.label}</div><span class="cat-pill" style="${colStyle(cat.color)}">${cat.name}</span></div>`;
+      item.innerHTML=`<div class="task-check ${done?'done':''}" ${cs}></div><div style="flex:1"><div class="task-label ${done?'done':''}">${t.label}</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><span class="cat-pill" style="margin-top:0;${colStyle(cat.color)}">${cat.name}</span>${wordsBtnHtml}</div></div>`;
       item.addEventListener('click',()=>toggle(wk,di,t.id));
       tl.appendChild(item);
     });
@@ -617,6 +664,127 @@ function openManager(){
 }
 function closeManager(){document.getElementById('modal-overlay').style.display='none'}
 function closeManagerOutside(e){if(e.target===document.getElementById('modal-overlay'))closeManager()}
+
+let activeWordsWk=null,activeWordsDi=null,activeWordsTaskId=null;
+
+function openWordsModal(wk,di,taskId,taskLabel){
+  activeWordsWk=wk;
+  activeWordsDi=di;
+  activeWordsTaskId=taskId;
+  const dates=getWeekDates(weekOffset);
+  const date=dates[di];
+  const pad=n=>n.toString().padStart(2,'0');
+  const dateStr=pad(date.getDate())+'.'+pad(date.getMonth()+1)+'.'+date.getFullYear();
+  document.getElementById('words-modal-title').textContent=`Wörter für ${dateStr} - ${taskLabel}`;
+  document.getElementById('words-modal-overlay').style.display='flex';
+  document.getElementById('new-word-input').value='';
+  document.getElementById('new-arabic-input').value='';
+  document.getElementById('new-sentence-input').value='';
+  renderWordsList();
+  setTimeout(()=>document.getElementById('new-word-input').focus(),100);
+}
+function closeWordsModal(){document.getElementById('words-modal-overlay').style.display='none'}
+function closeWordsModalOutside(e){if(e.target===document.getElementById('words-modal-overlay'))closeWordsModal()}
+
+function renderWordsList(){
+  if(!activeWordsWk)return;
+  const k=activeWordsDi+'_'+activeWordsTaskId+'_words';
+  const words=state[activeWordsWk][k]||[];
+  const listEl=document.getElementById('words-list');
+  if(words.length===0){
+    listEl.innerHTML='<div style="font-size:13px;color:var(--txt3);text-align:center;padding:20px 0">Noch keine Wörter für heute hinzugefügt.</div>';
+    return;
+  }
+  let html='';
+  words.forEach((w,i)=>{
+    html+=`<div class="word-item">
+      <div class="word-content">
+        <div class="word-main" style="display:flex;align-items:baseline;gap:6px">${esc(w.word)} ${w.arabic?`<span style="color:var(--amber);font-size:13px;font-weight:normal">- ${esc(w.arabic)}</span>`:''}</div>
+        ${w.sentence?`<div class="word-sentence">${esc(w.sentence)}</div>`:''}
+      </div>
+      <button class="icon-btn danger" onclick="deleteWord(${i})"><i class="ti ti-trash"></i></button>
+    </div>`;
+  });
+  listEl.innerHTML=html;
+}
+
+function addWord(){
+  const wIn=document.getElementById('new-word-input');
+  const aIn=document.getElementById('new-arabic-input');
+  const sIn=document.getElementById('new-sentence-input');
+  const word=wIn.value.trim();
+  const arabic=aIn.value.trim();
+  const sentence=sIn.value.trim();
+  if(!word)return;
+  
+  if(!state[activeWordsWk])state[activeWordsWk]={};
+  const k=activeWordsDi+'_'+activeWordsTaskId+'_words';
+  if(!state[activeWordsWk][k])state[activeWordsWk][k]=[];
+  state[activeWordsWk][k].push({word,arabic,sentence});
+  saveState();
+  
+  wIn.value='';
+  aIn.value='';
+  sIn.value='';
+  renderWordsList();
+  render();
+  wIn.focus();
+}
+
+function deleteWord(idx){
+  if(!activeWordsWk)return;
+  const k=activeWordsDi+'_'+activeWordsTaskId+'_words';
+  if(!state[activeWordsWk][k])return;
+  state[activeWordsWk][k].splice(idx,1);
+  saveState();
+  renderWordsList();
+  render();
+}
+
+async function autoTranslateWord(){
+  const wIn=document.getElementById('new-word-input');
+  const aIn=document.getElementById('new-arabic-input');
+  const word=wIn.value.trim();
+  if(!word || aIn.value.trim()!=='')return;
+  aIn.placeholder='Übersetze...';
+  try{
+    const res=await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=de|ar`);
+    const data=await res.json();
+    if(data&&data.responseData&&data.responseData.translatedText){
+      aIn.value=data.responseData.translatedText;
+    }
+  }catch(e){console.error(e)}
+  aIn.placeholder='Bedeutung (Arabisch)';
+}
+
+function openGlobalWordsModal(){
+  const listEl=document.getElementById('global-words-list');
+  let allWords=[];
+  Object.keys(state).forEach(wk=>{
+    Object.keys(state[wk]).forEach(k=>{
+      if(k.endsWith('_words')){
+        allWords=allWords.concat(state[wk][k]);
+      }
+    });
+  });
+  if(allWords.length===0){
+    listEl.innerHTML='<div style="font-size:13px;color:var(--txt3);text-align:center;padding:20px 0">Du hast noch keine Wörter gelernt.</div>';
+  } else {
+    let html='';
+    allWords.forEach(w=>{
+      html+=`<div class="word-item" style="padding:8px 10px">
+        <div class="word-content">
+          <div class="word-main" style="display:flex;align-items:baseline;gap:6px">${esc(w.word)} ${w.arabic?`<span style="color:var(--amber);font-size:13px;font-weight:normal">- ${esc(w.arabic)}</span>`:''}</div>
+          ${w.sentence?`<div class="word-sentence">${esc(w.sentence)}</div>`:''}
+        </div>
+      </div>`;
+    });
+    listEl.innerHTML=html;
+  }
+  document.getElementById('global-words-modal-overlay').style.display='flex';
+}
+function closeGlobalWordsModal(){document.getElementById('global-words-modal-overlay').style.display='none'}
+function closeGlobalWordsModalOutside(e){if(e.target===document.getElementById('global-words-modal-overlay'))closeGlobalWordsModal()}
 
 function switchTab(t){modalTab=t;renderModal();}
 
